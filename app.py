@@ -31,7 +31,7 @@ address_columns = {
 }
 
 name_columns = {
-    "Skilled Nursing": "Facility Name",
+    "Skilled Nursing": "Provider Name",
     "Home Health": "Provider Name",
     "Inpatient Rehab": "Provider Name",
     "Long Term Care": "Provider Name",
@@ -89,6 +89,7 @@ def process_dataset(modality, file_path, user_coords):
             national_avg = df_grouped['Score'].mean()
             min_score, max_score = df_grouped['Score'].min(), df_grouped['Score'].max()
             top_local = local_df.sort_values(by='Score', ascending=False).head(3)[[name_col, 'Score']]
+            top_local['Score'] = top_local['Score'].apply(lambda x: scale_to_five(x, min_score, max_score))
             return local_avg, national_avg, min_score, max_score, top_local
 
         elif modality == "Home Health":
@@ -110,6 +111,7 @@ def process_dataset(modality, file_path, user_coords):
             min_score, max_score = df[rating_col].min(), df[rating_col].max()
             top_local = local_df.sort_values(by=rating_col, ascending=False).head(3)[[name_col, rating_col]]
             top_local.columns = [name_col, 'Score']
+            top_local['Score'] = top_local['Score'].apply(lambda x: scale_to_five(x, min_score, max_score))
             return local_avg, national_avg, min_score, max_score, top_local
 
         else:
@@ -131,6 +133,7 @@ def process_dataset(modality, file_path, user_coords):
             min_score, max_score = df[rating_col].min(), df[rating_col].max()
             top_local = local_df.sort_values(by=rating_col, ascending=False).head(3)[[name_col, rating_col]]
             top_local.columns = [name_col, 'Score']
+            top_local['Score'] = top_local['Score'].apply(lambda x: scale_to_five(x, min_score, max_score))
             return local_avg, national_avg, min_score, max_score, top_local
 
     except Exception as e:
@@ -140,7 +143,7 @@ def process_dataset(modality, file_path, user_coords):
 st.title("Healthcare Facility Comparison Tool")
 st.write("Compare your local care facilities to national averages across five care types.")
 
-user_address = st.text_input("Enter your address:", placeholder="Enter your address here")
+user_address = st.text_input("Enter your address:", "")
 
 if user_address:
     try:
