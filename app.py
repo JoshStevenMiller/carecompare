@@ -1,9 +1,9 @@
 import pandas as pd
-from geopy.geocoders import Nominatim
 from geopy.distance import geodesic
 import pgeocode
 import streamlit as st
 import os
+import requests
 
 # Define possible file paths for each care type
 expected_files = {
@@ -30,13 +30,20 @@ address_columns = {
     "Hospice": "ZIP Code"
 }
 
+GOOGLE_API_KEY = "AIzaSyA80bcMpO6SW14sbeZQrO6APvakLVm99y8"
+
+@st.cache_data(show_spinner=False)
 def get_user_coords(address):
-    geolocator = Nominatim(user_agent="care_compare_app")
-    location = geolocator.geocode(address)
-    if location:
-        return (location.latitude, location.longitude)
-    else:
-        raise ValueError("Address could not be geocoded.")
+    endpoint = "https://maps.googleapis.com/maps/api/geocode/json"
+    params = {"address": address, "key": GOOGLE_API_KEY}
+    response = requests.get(endpoint, params=params)
+    if response.status_code != 200:
+        raise ValueError(f"Non-successful status code {response.status_code}")
+    data = response.json()
+    if data['status'] != 'OK':
+        raise ValueError(f"Geocoding failed: {data['status']}")
+    location = data['results'][0]['geometry']['location']
+    return (location['lat'], location['lng'])
 
 def get_zip_centroids(zip_codes):
     nomi = pgeocode.Nominatim('us')
