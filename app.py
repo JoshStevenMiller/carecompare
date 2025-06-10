@@ -30,6 +30,14 @@ address_columns = {
     "Hospice": "ZIP Code"
 }
 
+name_columns = {
+    "Skilled Nursing": "Facility Name",
+    "Home Health": "Provider Name",
+    "Inpatient Rehab": "Provider Name",
+    "Long Term Care": "Provider Name",
+    "Hospice": "Facility Name"
+}
+
 GOOGLE_API_KEY = "AIzaSyA80bcMpO6SW14sbeZQrO6APvakLVm99y8"
 
 @st.cache_data(show_spinner=False)
@@ -61,12 +69,13 @@ def process_dataset(modality, file_path, user_coords):
     try:
         df = pd.read_csv(file_path, dtype=str)
         zip_col = address_columns[modality]
+        name_col = name_columns[modality]
 
         if modality in ["Hospice", "Long Term Care", "Inpatient Rehab"]:
             df = df[df['Score'].notna() & (df['Score'] != "Not Applicable") & (df['Score'] != "")]
             df['Score'] = pd.to_numeric(df['Score'], errors='coerce')
             df = df.dropna(subset=['Score'])
-            df_grouped = df.groupby(['CMS Certification Number (CCN)', zip_col])['Score'].mean().reset_index()
+            df_grouped = df.groupby([name_col, zip_col])['Score'].mean().reset_index()
             df_grouped[zip_col] = df_grouped[zip_col].astype(str)
             zip_coords = get_zip_centroids(df_grouped[zip_col].unique())
             df_grouped = df_grouped.merge(zip_coords, left_on=zip_col, right_index=True, how="left")
@@ -79,7 +88,8 @@ def process_dataset(modality, file_path, user_coords):
             local_avg = local_df['Score'].mean()
             national_avg = df_grouped['Score'].mean()
             min_score, max_score = df_grouped['Score'].min(), df_grouped['Score'].max()
-            return local_avg, national_avg, min_score, max_score
+            top_local = local_df.sort_values(by='Score', ascending=False).head(3)[[name_col, 'Score']]
+            return local_avg, national_avg, min_score, max_score, top_local
 
         elif modality == "Home Health":
             rating_col = performance_columns[modality]
@@ -98,7 +108,9 @@ def process_dataset(modality, file_path, user_coords):
             local_avg = local_df[rating_col].mean()
             national_avg = df[rating_col].mean()
             min_score, max_score = df[rating_col].min(), df[rating_col].max()
-            return local_avg, national_avg, min_score, max_score
+            top_local = local_df.sort_values(by=rating_col, ascending=False).head(3)[[name_col, rating_col]]
+            top_local.columns = [name_col, 'Score']
+            return local_avg, national_avg, min_score, max_score, top_local
 
         else:
             rating_col = performance_columns[modality]
@@ -117,25 +129,29 @@ def process_dataset(modality, file_path, user_coords):
             local_avg = local_df[rating_col].mean()
             national_avg = df[rating_col].mean()
             min_score, max_score = df[rating_col].min(), df[rating_col].max()
-            return local_avg, national_avg, min_score, max_score
+            top_local = local_df.sort_values(by=rating_col, ascending=False).head(3)[[name_col, rating_col]]
+            top_local.columns = [name_col, 'Score']
+            return local_avg, national_avg, min_score, max_score, top_local
 
     except Exception as e:
-        return None, None, None, None
+        return None, None, None, None, pd.DataFrame()
 
 # Streamlit UI
 st.title("Healthcare Facility Comparison Tool")
 st.write("Compare your local care facilities to national averages across five care types.")
 
-user_address = st.text_input("Enter your address:", "3401 NW 85th Court, Kansas City, MO 64154")
+user_address = st.text_input("Enter your address:", placeholder="Enter your address here")
 
 if user_address:
     try:
         user_coords = get_user_coords(user_address)
 
         results = []
+        top_facilities = {}
+
         for modality, filename in expected_files.items():
             if os.path.exists(filename):
-                local_avg, national_avg, min_val, max_val = process_dataset(modality, filename, user_coords)
+                local_avg, national_avg, min_val, max_val, top_local = process_dataset(modality, filename, user_coords)
                 if local_avg is not None and national_avg is not None:
                     results.append({
                         "Care Type": modality,
@@ -144,6 +160,7 @@ if user_address:
                         "Local (1-5 Scale)": scale_to_five(local_avg, min_val, max_val),
                         "National (1-5 Scale)": scale_to_five(national_avg, min_val, max_val)
                     })
+                    top_facilities[modality] = top_local
                 else:
                     results.append({
                         "Care Type": modality,
@@ -163,6 +180,11 @@ if user_address:
 
         st.subheader("Comparison Summary")
         st.dataframe(pd.DataFrame(results))
+
+        for modality, top_df in top_facilities.items():
+            if not top_df.empty:
+                st.markdown(f"### Top Local Facilities for {modality}")
+                st.dataframe(top_df.reset_index(drop=True))
 
     except Exception as e:
         st.error(f"Error: {e}")
